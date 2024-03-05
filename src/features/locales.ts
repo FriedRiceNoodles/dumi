@@ -1,3 +1,4 @@
+import { SP_ROUTE_PREFIX } from '@/constants';
 import type { IApi } from '@/types';
 import path from 'path';
 import { winPath } from 'umi/plugin-utils';
@@ -37,6 +38,21 @@ export default (api: IApi) => {
         );
       },
     },
+  });
+
+  api.onCheck(() => {
+    // check locales config
+    if (api.config.locales) {
+      // other locale must set base to /
+      api.config.locales.slice(1).forEach((locale) => {
+        if ('base' in locale && locale.base === '/') {
+          assert(
+            false,
+            `Only the first locale item is allowed to set base: '/', you can move ${locale.id} to the front as default locale. See more: See https://d.umijs.org/config#locales`,
+          );
+        }
+      });
+    }
   });
 
   api.register({
@@ -89,16 +105,32 @@ const cache = createIntlCache();
 
 const LocalesContainer: FC<{ children: ReactNode }> = (props) => {
   const getIntl = useCallback(() => {
+    const base = "${api.config.base!.replace(/\/$/, '')}"
     const matched = locales.slice().reverse().find((locale) => (
       'suffix' in locale
         // suffix mode
         ? history.location.pathname.replace(/([^/])\\/$/, '$1').endsWith(locale.suffix)
         // base mode
-        : history.location.pathname.replace(/([^/])\\/$/, '$1').startsWith(locale.base)
+        : history.location.pathname.replace(/([^/])\\/$/, '$1')
+          .startsWith(base + locale.base)
     ));
-    const locale = matched ? matched.id : locales[0].id;
+    let locale = matched ? matched.id : locales[0].id;
+    // using query on demos
+    if(history.location.pathname.startsWith(base + '/${SP_ROUTE_PREFIX}demos')){
+        const params = new URLSearchParams(history.location.search);
+        // match the locale of the query
+        if (params.get('locale')){
+          locale = params.get('locale');
+        }
+    }
+    const localeMessages = messages[locale] || {};
 
-    return createIntl({ locale, messages: messages[locale] || {} }, cache);
+    // append internal message, for use intl as string template util
+    localeMessages['$internal.edit.link'] = ${JSON.stringify(
+      api.config.themeConfig.editLink,
+    )};
+
+    return createIntl({ locale, messages: localeMessages }, cache);
   }, []);
   const [intl, setIntl] = useState(() => getIntl());
 

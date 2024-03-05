@@ -1,16 +1,17 @@
 import parseBlockAsset from '@/assetParsers/block';
 import type { IDumiDemoProps } from '@/client/theme-api/DumiDemo';
-import { getRoutePathFromFsPath } from '@/utils';
+import { getFileIdFromFsPath } from '@/utils';
 import type { sync } from 'enhanced-resolve';
 import type { Element, Root } from 'hast';
 import path from 'path';
-import { winPath } from 'umi/plugin-utils';
+import { logger, winPath } from 'umi/plugin-utils';
 import type { Transformer } from 'unified';
 import type { DataMap } from 'vfile';
 import type { IMdTransformerOptions } from '.';
 
 let visit: typeof import('unist-util-visit').visit;
 let SKIP: typeof import('unist-util-visit').SKIP;
+let EXIT: typeof import('unist-util-visit').EXIT;
 let toString: typeof import('hast-util-to-string').toString;
 let isElement: typeof import('hast-util-is-element').isElement;
 const DEMO_NODE_CONTAINER = '$demo-container';
@@ -21,7 +22,7 @@ export const DUMI_DEMO_GRID_TAG = 'DumiDemoGrid';
 
 // workaround to import pure esm module
 (async () => {
-  ({ visit, SKIP } = await import('unist-util-visit'));
+  ({ visit, SKIP, EXIT } = await import('unist-util-visit'));
   ({ toString } = await import('hast-util-to-string'));
   ({ isElement } = await import('hast-util-is-element'));
 })();
@@ -29,7 +30,11 @@ export const DUMI_DEMO_GRID_TAG = 'DumiDemoGrid';
 type IRehypeDemoOptions = Pick<
   IMdTransformerOptions,
   'techStacks' | 'cwd' | 'fileAbsPath' | 'resolve'
-> & { resolver: typeof sync };
+> & {
+  resolver: typeof sync;
+  fileLocaleLessPath: string;
+  fileLocale?: string;
+};
 
 /**
  * get language for code element
@@ -70,9 +75,7 @@ function getCodeId(
   atomId?: string,
 ) {
   // Foo, or docs-guide, or docs-guide-faq
-  const prefix =
-    atomId ||
-    getRoutePathFromFsPath(path.relative(cwd, fileAbsPath)).replace(/\//g, '-');
+  const prefix = atomId || getFileIdFromFsPath(path.relative(cwd, fileAbsPath));
 
   return [prefix.toLowerCase(), 'demo', localId.toLowerCase()]
     .filter(Boolean)
@@ -110,6 +113,8 @@ export default function rehypeDemo(
 ): Transformer<Root> {
   return async (tree, vFile) => {
     const deferrers: Promise<DataMap['demos'][0]>[] = [];
+    // sse an array to store all demo ids for subsequent repeat warnings
+    const demoIds: string[] = [];
     const replaceNodes: Element[] = [];
     let index = 0;
 
@@ -151,18 +156,22 @@ export default function rehypeDemo(
               node!.data[DEMO_NODE_CONTAINER] = true;
 
               // try to find the next demo node or br node
-              while (
-                nextChild &&
-                ((isElement(nextChild, 'code') &&
-                  tryMarkDemoNode(nextChild, opts)) ||
-                  isElement(nextChild, 'br'))
-              ) {
-                // move to the next child index
-                splitFrom += 1;
+              while (nextChild) {
+                if (
+                  (isElement(nextChild, 'code') &&
+                    tryMarkDemoNode(nextChild, opts)) ||
+                  isElement(nextChild, 'br')
+                ) {
+                  // move to the next child index
+                  splitFrom += 1;
 
-                // update next child for the next check
-                nextChildIndex = splitFrom + 1;
-                nextChild = node.children[nextChildIndex];
+                  // update next child for the next check
+                  nextChildIndex = splitFrom + 1;
+                  nextChild = node.children[nextChildIndex];
+                } else {
+                  splitFrom += 1;
+                  break;
+                }
               }
 
               // if there has no next node, it means need not to split, SKIP directly
@@ -184,13 +193,48 @@ export default function rehypeDemo(
       }
     });
 
+    // find all demo nodes, and check whether there is `only` mark
+    let hasOnlySign = false;
+    let hasSkipSign = false;
+    visit<Root, 'element'>(tree, 'element', (node) => {
+      if (isElement(node, 'p') && node.data?.[DEMO_NODE_CONTAINER]) {
+        for (const codeNode of node.children) {
+          if (isElement(codeNode, 'code')) {
+            hasSkipSign ||= 'skip' in codeNode.properties!;
+
+            if ('only' in codeNode.properties!) {
+              hasOnlySign = true;
+              return EXIT;
+            }
+          }
+        }
+      }
+    });
+
+    if (process.env.NODE_ENV === 'production' && (hasOnlySign || hasSkipSign)) {
+      logger.warn(
+        `The 'only' or 'skip' mark is not supported in production environment, please remove it. at ${
+          vFile.data.frontmatter!.filename
+        }`,
+      );
+    }
+
     visit<Root, 'element'>(tree, 'element', (node) => {
       if (isElement(node, 'p') && node.data?.[DEMO_NODE_CONTAINER]) {
         const demosPropData: IDumiDemoProps[] = [];
-
-        node.children.forEach((codeNode) => {
+        for (const codeNode of node.children) {
           // strip invalid br elements
           if (isElement(codeNode, 'code')) {
+            // check whether to skip this demo
+            const shouldSkipNonOnlyDemos =
+              hasOnlySign && !('only' in codeNode.properties!);
+            if (
+              process.env.NODE_ENV !== 'production' &&
+              ('skip' in codeNode.properties! || shouldSkipNonOnlyDemos)
+            ) {
+              continue;
+            }
+
             const codeType = codeNode.data!.type as Parameters<
               IRehypeDemoOptions['techStacks'][0]['transformCode']
             >[1]['type'];
@@ -218,17 +262,22 @@ export default function rehypeDemo(
               parseOpts.fileAbsPath = winPath(
                 codeNode.properties!.src as string,
               );
-              parseOpts.id = getCodeId(
-                opts.cwd,
-                opts.fileAbsPath,
+
+              let localId =
+                (codeNode.properties?.id as string) ??
                 path.parse(
                   parseOpts.fileAbsPath.replace(/\/index\.(j|t)sx?$/, ''),
-                ).name,
+                ).name;
+
+              parseOpts.id = getCodeId(
+                opts.cwd,
+                opts.fileLocaleLessPath,
+                localId,
                 vFile.data.frontmatter!.atomId,
               );
-              component = `React.lazy(() => import( /* webpackChunkName: "${chunkName}" */ '${winPath(
+              component = `React.memo(React.lazy(() => import( /* webpackChunkName: "${chunkName}" */ '${winPath(
                 parseOpts.fileAbsPath,
-              )}?techStack=${techStack.name}'))`;
+              )}?techStack=${techStack.name}')))`;
               // use code value as title
               // TODO: force checking
               if (codeValue) codeNode.properties!.title = codeValue;
@@ -236,13 +285,17 @@ export default function rehypeDemo(
                 path.relative(opts.cwd, parseOpts.fileAbsPath),
               );
             } else {
+              const localId = [opts.fileLocale, String(index++)]
+                .filter(Boolean)
+                .join('-');
+
               // pass a fake entry point for code block demo
               // and pass the real code via `entryPointCode` option
               parseOpts.fileAbsPath = opts.fileAbsPath.replace('.md', '.tsx');
               parseOpts.id = getCodeId(
                 opts.cwd,
-                opts.fileAbsPath,
-                String(index++),
+                opts.fileLocaleLessPath,
+                localId,
                 vFile.data.frontmatter!.atomId,
               );
               component = techStack.transformCode(codeValue, {
@@ -252,11 +305,26 @@ export default function rehypeDemo(
             }
 
             const propDemo: IDumiDemoProps['demo'] = { id: parseOpts.id };
+            demoIds.push(parseOpts.id);
 
             // generate asset data for demo
             deferrers.push(
               parseBlockAsset(parseOpts).then(
                 async ({ asset, sources, frontmatter }) => {
+                  // repeat id to give warning
+                  if (
+                    demoIds.indexOf(parseOpts.id) !==
+                    demoIds.lastIndexOf(parseOpts.id)
+                  ) {
+                    const startLine = node.position?.start.line;
+                    const suffix = startLine ? `:${startLine}` : '';
+
+                    logger.warn(
+                      `Duplicate demo id found due to filename conflicts, please consider adding a unique id to code tag to resolve this.
+        at ${opts.fileAbsPath}${suffix}`,
+                    );
+                  }
+
                   // eslint-disable-next-line @typescript-eslint/no-unused-vars
                   const { src, className, ...restAttrs } =
                     codeNode.properties || {};
@@ -265,6 +333,15 @@ export default function rehypeDemo(
                     'snapshot',
                     'keywords',
                   ];
+                  const techStackOpts = {
+                    type: codeType,
+                    mdAbsPath: opts.fileAbsPath,
+                    fileAbsPath:
+                      codeType === 'external'
+                        ? parseOpts.fileAbsPath
+                        : undefined,
+                    entryPointCode: parseOpts.entryPointCode,
+                  };
 
                   // transform empty string attr to boolean, such as `debug`, `iframe` & etc.
                   Object.keys(restAttrs).forEach((key) => {
@@ -301,15 +378,10 @@ export default function rehypeDemo(
                   // HINT: must use `Object.assign` to keep the reference
                   Object.assign(
                     previewerProps,
-                    (await techStack.generatePreviewerProps?.(originalProps, {
-                      type: codeType,
-                      mdAbsPath: opts.fileAbsPath,
-                      fileAbsPath:
-                        codeType === 'external'
-                          ? parseOpts.fileAbsPath
-                          : undefined,
-                      entryPointCode: parseOpts.entryPointCode,
-                    })) || originalProps,
+                    (await techStack.generatePreviewerProps?.(
+                      originalProps,
+                      techStackOpts,
+                    )) || originalProps,
                   );
 
                   // md to string for asset metadata
@@ -331,7 +403,7 @@ export default function rehypeDemo(
                       .use(remarkParse)
                       .use(remarkGfm)
                       .use(remarkRehype, { allowDangerousHtml: true })
-                      .use(rehypeStringify)
+                      .use(rehypeStringify, { allowDangerousHtml: true })
                       .process(previewerProps.description);
 
                     previewerProps.description = String(result.value);
@@ -345,9 +417,11 @@ export default function rehypeDemo(
                     id: asset.id,
                     component,
                     asset: techStack.generateMetadata
-                      ? await techStack.generateMetadata(asset)
+                      ? await techStack.generateMetadata(asset, techStackOpts)
                       : asset,
-                    sources,
+                    sources: techStack.generateSources
+                      ? await techStack.generateSources(sources, techStackOpts)
+                      : sources,
                   };
                 },
               ),
@@ -358,8 +432,16 @@ export default function rehypeDemo(
               demo: propDemo,
               previewerProps,
             });
+
+            // only process demos with the first occurrence of `only` mark
+            if (
+              process.env.NODE_ENV !== 'production' &&
+              'only' in codeNode.properties!
+            ) {
+              break;
+            }
           }
-        });
+        }
 
         // replace original node, and save it for parse the final real jsx attributes after all deferrers resolved
         // because the final `previewerProps` depends on the async parse result from `parseBlockAsset`

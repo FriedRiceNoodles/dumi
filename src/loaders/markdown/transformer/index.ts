@@ -1,13 +1,16 @@
 import type { IParsedBlockAsset } from '@/assetParsers/block';
-import type { IRouteMeta } from '@/client/theme-api/types';
-import type { IDumiConfig, IDumiTechStack } from '@/types';
+import type { ILocalesConfig, IRouteMeta } from '@/client/theme-api/types';
+import { VERSION_2_DEPRECATE_SOFT_BREAKS } from '@/constants';
+import type { IApi, IDumiConfig, IDumiTechStack } from '@/types';
 import enhancedResolve from 'enhanced-resolve';
 import type { IRoute } from 'umi';
+import { semver } from 'umi/plugin-utils';
 import type { Plugin, Processor } from 'unified';
 import type { Data } from 'vfile';
 import rehypeDemo from './rehypeDemo';
 import rehypeDesc from './rehypeDesc';
 import rehypeEnhancedTag from './rehypeEnhancedTag';
+import rehypeHighlightLine from './rehypeHighlightLine';
 import rehypeImg from './rehypeImg';
 import rehypeIsolation from './rehypeIsolation';
 import rehypeJsxify from './rehypeJsxify';
@@ -16,6 +19,7 @@ import rehypeRaw from './rehypeRaw';
 import rehypeSlug from './rehypeSlug';
 import rehypeStrip from './rehypeStrip';
 import rehypeText from './rehypeText';
+import remarkBreaks from './remarkBreaks';
 import remarkContainer from './remarkContainer';
 import remarkEmbed from './remarkEmbed';
 import remarkMeta from './remarkMeta';
@@ -61,7 +65,9 @@ export interface IMdTransformerOptions {
   resolve: IDumiConfig['resolve'];
   extraRemarkPlugins?: IDumiConfig['extraRemarkPlugins'];
   extraRehypePlugins?: IDumiConfig['extraRehypePlugins'];
-  routers: Record<string, IRoute>;
+  routes: Record<string, IRoute>;
+  locales: ILocalesConfig;
+  pkg: IApi['pkg'];
 }
 
 export interface IMdTransformerResult {
@@ -69,7 +75,18 @@ export interface IMdTransformerResult {
   meta: Data;
 }
 
-function applyUnifiedPlugin(opts: {
+/**
+ * keep markdown soft break before 2.2.0
+ */
+function keepSoftBreak(pkg: IApi['pkg']) {
+  // for dumi local example project
+  if (pkg?.name?.startsWith('@examples/') || pkg?.name === 'dumi') return false;
+
+  const ver = pkg?.devDependencies?.dumi ?? pkg?.dependencies?.dumi ?? '^2.0.0';
+  return !semver.subset(ver, VERSION_2_DEPRECATE_SOFT_BREAKS);
+}
+
+async function applyUnifiedPlugin(opts: {
   processor: Processor;
   plugin: NonNullable<IMdTransformerOptions['extraRemarkPlugins']>[0];
   cwd: IMdTransformerOptions['cwd'];
@@ -77,21 +94,20 @@ function applyUnifiedPlugin(opts: {
   const [plugin, options] = Array.isArray(opts.plugin)
     ? opts.plugin
     : [opts.plugin];
-  const mod =
-    typeof plugin === 'function'
-      ? plugin
-      : require(require.resolve(plugin, { paths: [opts.cwd] }));
+
+  let mod = typeof plugin === 'function' ? plugin : await import(plugin);
+
   const fn: Plugin = mod.default || mod;
 
   opts.processor.use(fn, options);
 }
 
 export default async (raw: string, opts: IMdTransformerOptions) => {
+  let fileLocaleLessPath = opts.fileAbsPath;
   const { unified } = await import('unified');
   const { default: remarkParse } = await import('remark-parse');
   const { default: remarkFrontmatter } = await import('remark-frontmatter');
   const { default: remarkDirective } = await import('remark-directive');
-  const { default: remarkBreaks } = await import('remark-breaks');
   const { default: remarkGfm } = await import('remark-gfm');
   const { default: remarkRehype } = await import('remark-rehype');
   const { default: rehypeAutolinkHeadings } = await import(
@@ -104,6 +120,14 @@ export default async (raw: string, opts: IMdTransformerOptions) => {
     extensions: ['.js', '.jsx', '.ts', '.tsx'],
     alias: opts.alias,
   });
+  const fileLocale = opts.locales.find((locale) =>
+    opts.fileAbsPath.endsWith(`.${locale.id}.md`),
+  )?.id;
+
+  // generate locale-less file abs path, for generate code id and atom id
+  if (fileLocale) {
+    fileLocaleLessPath = opts.fileAbsPath.replace(`.${fileLocale}.md`, '.md');
+  }
 
   const processor = unified()
     .use(remarkParse)
@@ -112,21 +136,25 @@ export default async (raw: string, opts: IMdTransformerOptions) => {
     .use(remarkMeta, {
       cwd: opts.cwd,
       fileAbsPath: opts.fileAbsPath,
+      fileLocaleLessPath,
       resolve: opts.resolve,
     })
     .use(remarkDirective)
     .use(remarkContainer)
-    .use(remarkBreaks)
     .use(remarkGfm);
 
+  if (keepSoftBreak(opts.pkg)) {
+    processor.use(remarkBreaks, { fileAbsPath: opts.fileAbsPath });
+  }
+
   // apply extra remark plugins
-  opts.extraRemarkPlugins?.forEach((plugin) =>
-    applyUnifiedPlugin({
+  for (const plugin of opts.extraRemarkPlugins ?? []) {
+    await applyUnifiedPlugin({
       plugin,
       processor,
       cwd: opts.cwd,
-    }),
-  );
+    });
+  }
 
   // apply internal rehype plugins
   processor
@@ -134,6 +162,7 @@ export default async (raw: string, opts: IMdTransformerOptions) => {
     .use(rehypeRaw, {
       fileAbsPath: opts.fileAbsPath,
     })
+    .use(rehypeHighlightLine)
     .use(rehypeRemoveComments, { removeConditional: true })
     .use(rehypeStrip)
     .use(rehypeImg)
@@ -141,13 +170,15 @@ export default async (raw: string, opts: IMdTransformerOptions) => {
       techStacks: opts.techStacks,
       cwd: opts.cwd,
       fileAbsPath: opts.fileAbsPath,
+      fileLocaleLessPath,
+      fileLocale,
       resolve: opts.resolve,
       resolver,
     })
     .use(rehypeSlug)
     .use(rehypeLink, {
       fileAbsPath: opts.fileAbsPath,
-      routers: opts.routers,
+      routes: opts.routes,
     })
     .use(rehypeAutolinkHeadings)
     .use(rehypeIsolation)
@@ -156,14 +187,16 @@ export default async (raw: string, opts: IMdTransformerOptions) => {
     // collect all texts for content search, must be the last rehype plugin
     .use(rehypeText);
 
-  // apply extra rehype plugins
-  opts.extraRehypePlugins?.forEach((plugin) =>
-    applyUnifiedPlugin({
+  for (const plugin of opts.extraRehypePlugins ?? []) {
+    await applyUnifiedPlugin({
       plugin,
       processor,
       cwd: opts.cwd,
-    }),
-  );
+    });
+  }
+
+  // info available to all plugins
+  processor.data('fileAbsPath', opts.fileAbsPath);
 
   const result = await processor.use(rehypeJsxify).process(raw);
 

@@ -31,15 +31,17 @@ export function getSchemas(): Record<string, (Joi: JoiRoot) => any> {
           )
           .optional(),
         atomDirs: Joi.array()
-          .items(Joi.object({ type: Joi.string(), dir: Joi.string() }))
+          .items(
+            Joi.object({
+              type: Joi.string(),
+              subType: Joi.string().optional(),
+              dir: Joi.string(),
+            }),
+          )
           .optional(),
-        entityDirs: Joi.forbidden().error(
-          new Error(
-            '`entityDirs` is already deprecated, please rename it to `atomDirs` in `.dumirc.ts`',
-          ),
-        ),
         codeBlockMode: Joi.string().valid('active', 'passive').optional(),
         entryFile: Joi.string().optional(),
+        forceKebabCaseRouting: Joi.bool().optional(),
       }).optional(),
     extraRemarkPlugins: getUnifiedPluginSchema,
     extraRehypePlugins: getUnifiedPluginSchema,

@@ -1,4 +1,6 @@
+/* eslint-disable @typescript-eslint/ban-types */
 import type AtomAssetsParser from '@/assetParsers/atom';
+import type { IParsedBlockAsset } from '@/assetParsers/block';
 import type { IDumiDemoProps } from '@/client/theme-api/DumiDemo';
 import type { ILocalesConfig, IThemeConfig } from '@/client/theme-api/types';
 import type { IContentTab } from '@/features/tabs';
@@ -11,6 +13,8 @@ import type { defineConfig as defineUmiConfig, IApi as IUmiApi } from 'umi';
 // ref: https://grrr.tech/posts/2021/typescript-partial/
 type Subset<K> = {
   [attr in keyof K]?: K[attr] extends Array<any>
+    ? K[attr]
+    : K[attr] extends Function | undefined
     ? K[attr]
     : K[attr] extends object
     ? Subset<K[attr]>
@@ -36,13 +40,10 @@ type IUmiConfig = Omit<
 interface IDumiExtendsConfig {
   resolve: {
     docDirs: (string | { type?: string; dir: string })[];
-    /**
-     * @deprecated use `resolve.atomDirs` instead
-     */
-    entityDirs?: { type: string; dir: string }[];
-    atomDirs: { type: string; dir: string }[];
+    atomDirs: { type: string; subType?: string; dir: string }[];
     codeBlockMode: 'active' | 'passive';
     entryFile?: string;
+    forceKebabCaseRouting: boolean;
   };
   locales: ILocalesConfig;
   themeConfig: IThemeConfig;
@@ -50,17 +51,16 @@ interface IDumiExtendsConfig {
   /**
    * extra unified plugins
    */
-  // eslint-disable-next-line @typescript-eslint/ban-types
   extraRemarkPlugins?: (string | Function | [string | Function, object])[];
-  // eslint-disable-next-line @typescript-eslint/ban-types
   extraRehypePlugins?: (string | Function | [string | Function, object])[];
 }
-export type IDumiConfig = IUmiConfig & IDumiExtendsConfig;
+export type IDumiConfig = Omit<IUmiConfig, 'locales'> & IDumiExtendsConfig;
 
 export type IDumiUserConfig = Subset<Omit<IDumiConfig, 'locales'>> & {
   locales?:
     | Exclude<IDumiConfig['locales'][0], { base: string }>[]
     | Omit<Exclude<IDumiConfig['locales'][0], { suffix: string }>, 'base'>[];
+  [key: string]: any;
 };
 
 export abstract class IDumiTechStack {
@@ -84,25 +84,33 @@ export abstract class IDumiTechStack {
    */
   abstract generateMetadata?(
     asset: ExampleBlockAsset,
-  ): Promise<ExampleBlockAsset> | ExampleBlockAsset;
-  /**
-   * generator for return previewer props
-   */
-  abstract generatePreviewerProps?(
-    props: IDumiDemoProps['previewerProps'],
     opts: {
       type: Parameters<IDumiTechStack['transformCode']>[1]['type'];
       mdAbsPath: string;
       fileAbsPath?: string;
       entryPointCode?: string;
     },
+  ): Promise<ExampleBlockAsset> | ExampleBlockAsset;
+  /**
+   * generator for return previewer props
+   */
+  abstract generatePreviewerProps?(
+    props: IDumiDemoProps['previewerProps'],
+    opts: Parameters<NonNullable<IDumiTechStack['generateMetadata']>>[1],
   ):
     | Promise<IDumiDemoProps['previewerProps']>
     | IDumiDemoProps['previewerProps'];
+  /**
+   * generator for return file path of demo sources
+   */
+  abstract generateSources?(
+    sources: IParsedBlockAsset['sources'],
+    opts: Parameters<NonNullable<IDumiTechStack['generateMetadata']>>[1],
+  ): Promise<IParsedBlockAsset['sources']> | IParsedBlockAsset['sources'];
 }
 
 export type IApi = IUmiApi & {
-  config: IDumiConfig;
+  config: IDumiConfig & { [key: string]: any };
   userConfig: IDumiUserConfig;
   service: IUmiApi['service'] & {
     themeData: IThemeLoadResult;

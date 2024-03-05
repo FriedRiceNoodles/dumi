@@ -14,6 +14,33 @@ dumi 内置了一套完善的默认主题，默认主题的呈现效果与 dumi 
 
 <!-- site config -->
 
+### editLink <Badge>2.2.2+</Badge>
+
+- 类型：`boolean | string`
+- 默认值：`true`
+
+配置是否在 Markdown 页面内容区域底部展示当前文档的编辑链接。
+
+当配置为 `true` 时 dumi 会根据项目 `package.json` 中的 `repository` 配置及当前分支，使用 [hosted-git-info](https://github.com/npm/hosted-git-info) 自动生成编辑链接，仅支持[部分代码托管平台](https://github.com/npm/hosted-git-info#supported-hosts)；如果你使用的是其他代码托管平台或私有化部署的平台，可以使用字符串模板自定义编辑链接，例如 `https://gitlab.example.com/group/repo/{filename}`，其中 `{filename}` 会被替换为当前文档在仓库中的文件路径。
+
+### lastUpdated <Badge>2.2.2+</Badge>
+
+- 类型：`boolean`
+- 默认值：`true`
+
+配置是否在 Markdown 页面内容区域底部展示当前文档的最后更新时间。
+
+文档最后更新时间来源于 Git 提交记录，如果 Markdown 文档还未被 Git 追踪，那么则会展示构建时间；如果你的文档通过 GitHub Action 进行部署，还需要在 [actions/checkout](https://github.com/actions/checkout) 步骤中加上 `fetch-depth: 0` 参数以检出所有 Git 提交记录，确保可以 dumi 可以拿到正确的最后更新时间，具体可参考 [FAQ - 自动部署](../guide/faq.md#自动部署)。
+
+### logo
+
+- 类型：`string | false`
+- 默认值：`dumi 的 LOGO`
+
+配置导航栏上的站点 LOGO，如果需要配置为本地图片文件，可将图片资源放入 `public` 文件夹，例如放置 `public/logo.png`，则配置 `/logo.png` 即可。
+
+配置为 `false` 时不展示 LOGO。
+
 ### name
 
 - 类型：`string`
@@ -21,16 +48,10 @@ dumi 内置了一套完善的默认主题，默认主题的呈现效果与 dumi 
 
 配置导航栏上的站点名称，不配置时不展示。
 
-### logo
-
-- 类型：`string`
-- 默认值：`dumi 的 LOGO`
-
-配置导航栏上的站点 LOGO，如果需要配置为本地图片文件，可将图片资源放入 `public` 文件夹，例如放置 `public/logo.png`，则配置 `/logo.png` 即可。
-
 ### nav
 
-- 类型：`{ title: '导航标题', link: '导航路由' }[] | Record<string, { title: '导航标题', link: '导航路由' }[]>`
+- `Navs`类型：`{ title: '导航标题', link: '导航路由', activePath: '高亮路径' }[] | Record<string, { title: '导航标题', link: '导航路由', activePath: '高亮路径' }[]>`
+- 类型：`Navs | {mode: "override" | "append" | "prepend", value: Navs}`
 - 默认值：`约定式导航`
 
 配置导航栏上的导航项，不配置时默认为约定式导航。约定式导航生成规则可参考 [约定式路由](/guide/conventional-routing)。
@@ -45,6 +66,16 @@ dumi 内置了一套完善的默认主题，默认主题的呈现效果与 dumi 
     'zh-CN': [{ title: '博客', link: '/blog' }],
     'en-US': [{ title: 'Blog', link: '/en/blog' }],
   },
+
+  // 支持通过 nav 将路由追加到约定路由前面或后面
+  nav: {
+    // mode可选值有：override、append、prepend
+    // - override: 直接覆盖约定导航，与 nav: [{ title: 'Blog', link: '/blog' }] 配置相同
+    // - append: 将 value 中的导航追加到约定路由后面
+    // - prepend: 将 value 中的导航添加到约定路由前面
+    mode: "append",
+    value: [{ title: 'Blog', link: '/blog' }]
+  }
 }
 ```
 
@@ -70,6 +101,24 @@ dumi 内置了一套完善的默认主题，默认主题的呈现效果与 dumi 
 - 默认值：`false`
 
 是否开启 RTL 切换，配置为 `true` 时导航栏会展示 RTL 按钮，用于将站点文本阅读方向切换为『从右到左』，通常在站点用户群体中有使用希伯来语或阿拉伯语时启用。
+
+### showLineNum <Badge>2.2.0+</Badge>
+
+- 类型：`boolean`
+- 默认值：`false`
+
+是否在代码块中展示行号，配置为 `true` 时会展示代码行号。
+
+<h3>
+nprogress
+<span style="display: none">-</span>
+<Badge>2.1.23+</Badge>
+</h3>
+
+- 类型：`boolean`
+- 默认值：`true`
+
+切换页面时是否在页面顶部展示进度条，效果如 [nprogress](https://github.com/rstacruz/nprogress)。
 
 ### prefersColor
 
@@ -108,6 +157,40 @@ export default {
     color: #000;
   }
 }
+```
+
+### socialLinks
+
+如果想要在顶部导航栏右侧增加一些社交网站的外链图标，可以通过 `socialLinks` 进行配置，目前最多支持配置 **5** 个外链图标
+
+目前支持以下社交平台图标：
+
+|   Key    |     描述      |
+| :------: | :-----------: |
+|  github  |  GitHub 平台  |
+|  weibo   |   微博平台    |
+| twitter  | Twitter 平台  |
+|  gitlab  |  Gitlab 平台  |
+| facebook | Facebook 平台 |
+|  zhihu   |   知乎平台    |
+|  yuque   |   语雀平台    |
+| linkedin | Linkedin 平台 |
+
+```ts
+export default {
+  themeConfig: {
+    socialLinks: {
+      github: 'https://github.com/umijs/dumi',
+      weibo: 'https://xxxx',
+      twitter: 'https://xxxx',
+      gitlab: 'https://xxxx',
+      facebook: 'https://xxxx',
+      zhihu: 'https://xxxx',
+      yuque: 'https://xxxx',
+      linkedin: 'https://xxxx',
+    },
+  },
+};
 ```
 
 <!-- site config end -->
@@ -172,5 +255,13 @@ hero:
     - text: Getting Started
       link: /getting-started
 ```
+
+### sidebar
+
+- 类型：`Boolean`
+- 默认值：`true`
+- 详细：
+
+控制侧边栏菜单的显示或隐藏。
 
 <!-- md config end -->

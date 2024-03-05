@@ -10,6 +10,7 @@ import {
   useSiteData,
 } from 'dumi';
 import Content from 'dumi/theme/slots/Content';
+import ContentFooter from 'dumi/theme/slots/ContentFooter';
 import Features from 'dumi/theme/slots/Features';
 import Footer from 'dumi/theme/slots/Footer';
 import Header from 'dumi/theme/slots/Header';
@@ -23,10 +24,12 @@ const DocLayout: FC = () => {
   const intl = useIntl();
   const outlet = useOutlet();
   const sidebar = useSidebarData();
-  const { hash } = useLocation();
-  const { loading } = useSiteData();
-  const [showSidebar, setShowSidebar] = useState(false);
+  const { hash, pathname } = useLocation();
+  const { loading, hostname } = useSiteData();
+  const [activateSidebar, updateActivateSidebar] = useState(false);
   const { frontmatter: fm } = useRouteMeta();
+
+  const showSidebar = fm.sidebar !== false && sidebar?.length > 0;
 
   // handle hash change or visit page hash after async chunk loaded
   useEffect(() => {
@@ -49,8 +52,8 @@ const DocLayout: FC = () => {
   return (
     <div
       className="dumi-default-doc-layout"
-      data-mobile-sidebar-active={showSidebar || undefined}
-      onClick={() => setShowSidebar(false)}
+      data-mobile-sidebar-active={activateSidebar || undefined}
+      onClick={() => updateActivateSidebar(false)}
     >
       <Helmet>
         <html lang={intl.locale.replace(/-.+$/, '')} />
@@ -63,21 +66,23 @@ const DocLayout: FC = () => {
         {fm.keywords && (
           <meta name="keywords" content={fm.keywords.join(',')} />
         )}
-        {fm.keywords && (
-          <meta property="og:keywords" content={fm.keywords.join(',')} />
-        )}
+        {fm.keywords &&
+          fm.keywords.map((keyword) => (
+            <meta key={keyword} property="article:tag" content={keyword}></meta>
+          ))}
+        {hostname && <link rel="canonical" href={hostname + pathname} />}
       </Helmet>
       <Header />
       <Hero />
       <Features />
-      {sidebar && (
+      {showSidebar && (
         <div className="dumi-default-doc-layout-mobile-bar">
           <button
             type="button"
             className="dumi-default-sidebar-btn"
             onClick={(ev) => {
               ev.stopPropagation();
-              setShowSidebar((v) => !v);
+              updateActivateSidebar((v) => !v);
             }}
           >
             <IconSidebar />
@@ -86,9 +91,10 @@ const DocLayout: FC = () => {
         </div>
       )}
       <main>
-        <Sidebar />
+        {showSidebar && <Sidebar />}
         <Content>
-          {outlet}
+          <article>{outlet}</article>
+          <ContentFooter />
           <Footer />
         </Content>
         {fm.toc === 'content' && (

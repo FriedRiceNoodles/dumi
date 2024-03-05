@@ -26,31 +26,16 @@ export default () => &lt;h1&gt;Hello dumi!&lt;/h1&gt;;
 `jsx` 和 `tsx` 的代码块将会被 dumi 解析为 React 组件，以上代码块将会被渲染成：
 
 ```jsx
+/**
+ * defaultShowCode: true
+ */
+
 import React from 'react';
 
 export default () => <h1>Hello dumi!</h1>;
 ```
 
 但是在 markdown 代码块中编写代码会失去类型提示和校验，不能像直接在 `tsx` 中那样丝滑，因此我们推荐使用 VSCode 插件 [TS in Markdown](https://github.com/Dali-Team/vscode-ts-in-markdown)。
-
-#### 在 demo 中引入组件
-
-dumi 有一个非常重要的原则——**开发者应该像用户一样使用组件**。
-
-如何理解？假设我们正在研发的组件库 NPM 包名叫做 `hello-dumi`，我们正在为其中的 `Button` 组件编写 demo，下面列举出引入组件的正确方式及错误示例：
-
-```jsx | pure
-// 正确示例
-import { Button } from 'hello-dumi';
-
-// 错误示例，用户不知道 Button 组件是哪里来的
-import Button from './index.tsx';
-import Button from '@/Button/index.tsx';
-```
-
-当我们的每个 demo 都秉持这一原则时，意味着我们写出的 demo，不仅可以用来调试组件、编写文档，还能被用户直接拷贝到项目中使用。
-
-也许你会有疑问，研发阶段的组件库源代码尚未发布成 NPM 包，怎么才能成功引入组件？无需担心，dumi 会为我们自动建立组件库 NPM 包 -> 组件库源代码的映射关系。
 
 #### 不渲染代码块
 
@@ -73,6 +58,36 @@ import Button from '@/Button/index.tsx';
 和代码块 demo 一样，上述代码也会被渲染为 React 组件，并且外部 demo 的源代码及其他依赖的源代码都可以被用户查看，就像这样：
 
 <code src="./demos/cols.tsx"></code>
+
+#### 本地跳过解析
+
+为了方便调试，你可以像 Jest 一样对 `<code />` 标签添加 `skip` 或 `only` 标识（仅在开发环境下有效）以跳过解析，例如：
+
+```html
+<code src="./demos/foo.tsx"></code>
+<!-- 下面这条将跳过解析 -->
+<code src="./demos/bar.tsx" skip></code>
+<code src="./demos/baz.tsx"></code>
+```
+
+### 如何引入组件
+
+dumi 有一个非常重要的原则——**开发者应该像用户一样使用组件**。
+
+如何理解？假设我们正在研发的组件库 NPM 包名叫做 `hello-dumi`，我们正在为其中的 `Button` 组件编写 demo，下面列举出引入组件的正确方式及错误示例：
+
+```jsx | pure
+// 正确示例
+import { Button } from 'hello-dumi';
+
+// 错误示例，用户不知道 Button 组件是哪里来的
+import Button from './index.tsx';
+import Button from '@/Button/index.tsx';
+```
+
+当我们的每个 demo 都秉持这一原则时，意味着我们写出的 demo，不仅可以用来调试组件、编写文档，还能被用户直接拷贝到项目中使用。
+
+也许你会有疑问，研发阶段的组件库源代码尚未发布成 NPM 包，怎么才能成功引入组件？无需担心，dumi 会为我们自动建立组件库 NPM 包 -> 组件库源代码的映射关系；如果你的项目是 monorepo，请使用 [`monorepoRedirect` 配置项](../config/index.md#monoreporedirect)来自动建立映射关系，同时也需要在 `tsconfig.json` 中为每个子包配置正确的 `paths` 确保类型可以正确解析。
 
 ## 控制 demo 渲染
 
@@ -101,6 +116,10 @@ dumi 目前支持如下 demo 控制能力。
 ```jsx
 /**
  * transform: true
+ * defaultShowCode: true
+ */
+/**
+ * transform: true
  */
 
 import React from 'react';
@@ -117,6 +136,10 @@ export default () => (
 ```jsx
 /**
  * background: '#f6f7f9'
+ * defaultShowCode: true
+ */
+/**
+ * background: '#f6f7f9'
  */
 
 import React from 'react';
@@ -131,6 +154,10 @@ export default () => null;
 ```jsx
 /**
  * compact: true
+ * defaultShowCode: true
+ */
+/**
+ * compact: true
  */
 
 import React from 'react';
@@ -143,6 +170,11 @@ export default () => '我会贴边站';
 通过 `title` 和 `description` 配置 demo 的标题和简介：
 
 ```jsx
+/**
+ * title: 我是标题
+ * description: 我是简介，我可以用 `Markdown` 来编写
+ * defaultShowCode: true
+ */
 /**
  * title: 我是标题
  * description: 我是简介，我可以用 `Markdown` 来编写
@@ -181,7 +213,7 @@ import React from 'react';
 export default () => <p>我会被直接嵌入</p>;
 ```
 
-<!-- ### 调试型 demo
+### 调试型 demo
 
 设置 `debug` 为 true，则该 demo 仅在开发环境下展示、且会有一个特殊标记：
 
@@ -195,6 +227,7 @@ import Previewer from 'dumi/theme/builtins/Previewer';
 export default () => (
   <Previewer
     asset={{
+      id: 'docs-guide-write-demo-demo-6',
       dependencies: {
         'index.tsx': {
           type: 'FILE',
@@ -203,18 +236,26 @@ export default () => (
         },
       },
     }}
+    demoUrl=""
+    disabledActions={['EXTERNAL']}
+    defaultShowCode
     debug
   >
     我仅在开发环境下展示
   </Previewer>
 );
-``` -->
+```
 
 ### iframe 模式
 
 设置 `iframe` 为 `true`，将会使用 `iframe` 渲染 demo，可实现和文档的完全隔离，通常用于布局型组件，此时 [`compact`](/config/demo#compact) 配置默认为 `true`：
 
 ```jsx
+/**
+ * iframe: true
+ * compact: true
+ * defaultShowCode: true
+ */
 /**
  * iframe: true
  * compact: true

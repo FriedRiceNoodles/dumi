@@ -1,9 +1,10 @@
 import {
+  catchUnhandledRejection,
   checkVersion as checkNodeVersion,
   setNodeTitle,
-} from 'umi/dist/cli/node';
+} from '@umijs/utils/dist/node';
 import { logger, setNoDeprecation, yParser } from 'umi/plugin-utils';
-import { DEV_COMMAND, FRAMEWORK_NAME } from './constants';
+import { DEV_COMMAND, FRAMEWORK_NAME, MIN_NODE_VERSION } from './constants';
 import { dev } from './dev';
 import { printHelp } from './printHelp';
 import { DumiService } from './service';
@@ -12,8 +13,10 @@ interface IOpts {
   presets?: string[];
 }
 
+catchUnhandledRejection();
+
 export async function run(opts?: IOpts) {
-  checkNodeVersion();
+  checkNodeVersion(MIN_NODE_VERSION);
   setNodeTitle(FRAMEWORK_NAME);
   setNoDeprecation();
 

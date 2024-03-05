@@ -1,8 +1,8 @@
 import { isTabRouteFile } from '@/features/tabs';
 import type { IThemeLoadResult } from '@/features/theme/loader';
-import { getCache } from '@/utils';
+import { getCache, getContentHash } from '@/utils';
 import fs from 'fs';
-import { lodash, Mustache, winPath } from 'umi/plugin-utils';
+import { Mustache, lodash, winPath } from 'umi/plugin-utils';
 import transform, {
   type IMdTransformerOptions,
   type IMdTransformerResult,
@@ -93,6 +93,9 @@ export const texts = {{{texts}}};
 
           // use raw-loader to load all source files
           Object.keys(this.sources).forEach((file: string) => {
+            // handle un-existed source file, e.g. custom tech-stack return custom dependencies
+            if (!asset.dependencies[file]) return;
+
             // to avoid modify original asset object
             asset = lodash.cloneDeep(asset);
             asset.dependencies[
@@ -132,9 +135,11 @@ export default DumiMarkdownContent;`;
   }
 }
 
-function getDepsCacheKey(deps: typeof depsMapping['0'] = []) {
+function getDepsCacheKey(deps: (typeof depsMapping)['0'] = []) {
   return JSON.stringify(
-    deps.map((file) => `${file}:${fs.statSync(file).mtimeMs}`),
+    deps.map(
+      (file) => `${file}:${getContentHash(fs.readFileSync(file, 'utf-8'))}`,
+    ),
   );
 }
 
@@ -145,14 +150,23 @@ export default function mdLoader(this: any, content: string) {
   const opts: IMdLoaderOptions = this.getOptions();
   const cb = this.async();
 
+  // disable cache for avoid assets metadata lost
+  // because the onResolveDemos and onResolveAtomMeta hook does not be fired when cache hit
+  if (
+    process.env.NODE_ENV === 'production' &&
+    ['onResolveDemos', 'onResolveAtomMeta'].some((k) => k in opts)
+  ) {
+    this.cacheable(false);
+  }
+
   const cache = getCache('md-loader');
-  // format: {path:mtime:loaderOpts}
+  // format: {path:contenthash:loaderOpts}
   const baseCacheKey = [
     this.resourcePath,
-    fs.statSync(this.resourcePath).mtimeMs,
+    getContentHash(content),
     JSON.stringify(lodash.omit(opts, ['mode', 'builtins', 'onResolveDemos'])),
   ].join(':');
-  // format: {baseCacheKey:{deps:mtime}[]}
+  // format: {baseCacheKey:{deps:contenthash}[]}
   const cacheKey = [
     baseCacheKey,
     getDepsCacheKey(depsMapping[this.resourcePath]),

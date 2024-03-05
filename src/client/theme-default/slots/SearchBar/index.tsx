@@ -3,7 +3,7 @@ import { ReactComponent as IconArrowUp } from '@ant-design/icons-svg/inline-svg/
 import { ReactComponent as IconSearch } from '@ant-design/icons-svg/inline-svg/outlined/search.svg';
 import { useSiteSearch } from 'dumi';
 import React, { useEffect, useRef, useState, type FC } from 'react';
-import SearchResult from '../SearchResult';
+import SearchResult from 'dumi/theme/slots/SearchResult';
 import './index.less';
 import { Input } from './Input';
 import { Mask } from './Mask';
@@ -13,6 +13,11 @@ export { Mask as SearchMask } from './Mask';
 const isAppleDevice = /(mac|iphone|ipod|ipad)/i.test(
   typeof navigator !== 'undefined' ? navigator?.platform : '',
 );
+
+/** Determine if the element that triggered the event is an input element */
+const isInput = (target: HTMLElement) =>
+  ['TEXTAREA', 'INPUT'].includes(target.tagName) ||
+  target.contentEditable === 'true';
 
 const SearchBar: FC = () => {
   const [focusing, setFocusing] = useState(false);
@@ -32,7 +37,7 @@ const SearchBar: FC = () => {
     const handler = (ev: KeyboardEvent) => {
       if (
         ((isAppleDevice ? ev.metaKey : ev.ctrlKey) && ev.key === 'k') ||
-        ev.key === '/'
+        (ev.key === '/' && !isInput(ev.target as HTMLElement))
       ) {
         ev.preventDefault();
 

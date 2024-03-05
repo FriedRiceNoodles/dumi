@@ -1,6 +1,6 @@
 import { getParameters } from 'codesandbox/lib/api/define';
-import type { IPreviewerProps } from 'dumi';
-import { genReactRenderCode } from './utils';
+import { ApplyPluginsType, type IPreviewerProps } from 'dumi';
+import { genReactRenderCode, pluginManager } from './utils';
 
 const CSB_API_ENDPOINT = 'https://codesandbox.io/api/v1/sandboxes/define';
 
@@ -42,7 +42,7 @@ function getCSBData(opts: IPreviewerProps) {
   files['sandbox.config.json'] = {
     content: JSON.stringify(
       {
-        template: isTSX ? 'create-react-app-typescript' : 'create-react-app',
+        template: 'create-react-app',
       },
       null,
       2,
@@ -79,7 +79,14 @@ function getCSBData(opts: IPreviewerProps) {
     isBinary: false,
   };
 
-  return getParameters({ files });
+  const csbOpts = pluginManager.applyPlugins({
+    type: ApplyPluginsType.modify,
+    key: 'modifyCodeSandboxData',
+    initialValue: { files },
+    args: opts,
+  });
+
+  return getParameters(csbOpts);
 }
 
 /**

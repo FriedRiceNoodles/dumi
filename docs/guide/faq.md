@@ -34,7 +34,7 @@ yarn add dumi cross-env -D
   },
 ```
 
-3. 增加配置，新建 `.dumirc`。
+3. 增加配置，新建 `.dumirc.js|ts` 到 `APP_ROOT` 指定的根目录中。dumi 会根据 `APP_ROOT` 来消费配置文件，如果不指定 `APP_ROOT`，则在项目根目录创建即可。
 
 ```js
 export default {
@@ -49,13 +49,13 @@ export default {
 5. 新建文档 `dumi/docs/index.md`。
 
 ```markdown
-# 这是一个 Dumi 结合 create-react-app 的 Demo
+# 这是一个 dumi 结合 create-react-app 的 Demo
 ```
 
 6. 将 dumi 的临时文件添加到 `.gitignore` 中。
 
 ```text
-.dumi
+.dumi/tmp*
 ```
 
 ## dumi 支持基于其他技术框架、例如 Vue、Angular 编写文档和 Demo 吗？
@@ -74,7 +74,7 @@ export default {
 
 ```ts
 export default {
-  base: '/文档起始路由',
+  base: '/文档起始路由/',
   publicPath: '/静态资源起始路径/',
   // 其他配置
 };
@@ -104,6 +104,8 @@ yarn add gh-pages -D
 }
 ```
 
+> 同样的，如果是 react 文档，使用 `gh-pages -d docs-dist`命令即可。
+
 编译生成 `dist` 目录
 
 ```bash
@@ -122,7 +124,7 @@ npm run deploy
 
 #### 自动部署
 
-利用 [Github Action](https://github.com/features/actions) 在每次 `master` 分支更新后自动部署
+利用 [Github Action](https://github.com/features/actions) 在每次 `main` 分支更新后自动部署
 
 新建 `.github/workflows/gh-pages.yml` 文件
 
@@ -132,16 +134,22 @@ name: github pages
 on:
   push:
     branches:
-      - master # default branch
+      - main # default branch
 
 jobs:
   deploy:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - run: npm install
-      # 文档编译命令，如果是 react 模板需要修改为 npm run docs:build
-      - run: npm run build
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          # 如果配置 themeConfig.lastUpdated 为 false，则不需要添加该参数以加快检出速度
+          fetch-depth: 0
+      - name: Install dependencies
+        run: npm install
+      - name: Build with dumi
+        # 文档编译命令，如果是 react 模板需要修改为 npm run docs:build
+        run: npm run build
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v3
         with:
@@ -149,6 +157,8 @@ jobs:
           # 文档目录，如果是 react 模板需要修改为 docs-dist
           publish_dir: ./dist
 ```
+
+> 如果 actions 部署时遇到 403 错误，可以尝试使用 [Deploy Token](https://github.com/peaceiris/actions-gh-pages#%EF%B8%8F-set-ssh-private-key-deploy_key)
 
 ## dumi 如何支持对 Swift、C#、Kotlin 等语言的语法高亮？
 
@@ -169,7 +179,42 @@ require('prismjs/components/prism-csharp');
 ## 为什么不支持 CSS Modules？
 
 主要两个原因：
+
 1. 使用者很难覆写样式，因为最终 `className` 不稳定
 2. 自动 CSS Modules 依赖 babel 编译产物，给使用项目带来额外的编译成本，而大部分框架默认都不编译 `node_modules`（比如 Umi 框架就需要配置 `extraBabelIncludes` 才会编译 `node_modules` 下的产物）
 
 也许大部分人选择在组件库项目中使用它，是因为做前端应用研发时的习惯性选型，但它其实不适合组件库项目；另外，原因 2 也会产生额外的调时成本：『为什么 dev 生效、发布后在项目里不生效？』
+
+## 为什么组件库发布以后，在项目中引入组件但样式不生效？
+
+> 这里仅讨论**非 CSS-in-JS** 的组件库，CSS-in-JS 的组件库如果存在此问题，应该和组件实现有关。
+
+遇到这个问题说明组件库文档中引入的组件是有样式的，需要先确认文档中样式生效的原因，通常有 3 种可能：
+
+1. 借助 `.dumi/global.less` 加载了组件库样式表
+2. 借助 `.dumirc.ts` 中的 `styles` 配置项加载了组件库样式表
+3. 借助 `babel-plugin-import` 并将其配置到 `.dumirc.ts` 中按需加载了组件样式
+
+实际上，这些样式引入方案均只对文档构建生效，也就是说它们都是依托于 dumi 框架提供的能力，而组件库发布为 NPM 包以后，组件库的编译将由实际使用组件库的项目负责。
+
+因此，我们需要根据项目使用的开发框架做等价配置，才能确保样式生效，此处以 Umi 项目为例，上述 3 种方案的等价配置方式如下：
+
+1. 借助 `src/global.less` 加载组件库样式表
+2. 借助 `.umirc.ts` 中的 `styles` 配置项加载组件库样式表
+3. 借助 `babel-plugin-import` 并将其配置到 `.umirc.ts` 中按需加载组件样式
+
+其实该问题还有一种解决思路，那就是直接在组件源码里引入样式表，类似：
+
+```ts
+import './index.less';
+// or
+import './index.css';
+
+// 组件其他源码
+```
+
+这样无论是 dumi 还是实际项目里，都不需要做额外配置，但这种做法也有一些限制：如果引入的是 `.less`，那么目标项目的开发框架必须支持编译 Less。
+
+## 是否支持三级导航？
+
+不支持。如果文档目录结构的复杂度超过 3 级，应该考虑优化文档整体结构而非使用三级导航。如果有特殊场景需要，可以自定义主题实现。

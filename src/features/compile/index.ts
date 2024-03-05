@@ -2,6 +2,8 @@ import type { IDemoLoaderOptions } from '@/loaders/demo';
 import type { IMdLoaderOptions } from '@/loaders/markdown';
 import ReactTechStack from '@/techStacks/react';
 import type { IApi, IDumiTechStack } from '@/types';
+import { _setFSCacheDir } from '@/utils';
+import path from 'path';
 import { addAtomMeta, addExampleAssets } from '../assets';
 
 export default (api: IApi) => {
@@ -14,17 +16,26 @@ export default (api: IApi) => {
     fn: () => new ReactTechStack(),
   });
 
-  // add customize option for babel-loader, to avoid collect wrong deps result in MFSU
-  api.modifyConfig((memo) => {
-    if (memo.babelLoaderCustomize) {
-      api.logger.warn(
-        'Config `babelLoaderCustomize` will be override by dumi, please report issue if you need it.',
-      );
-    }
+  api.modifyConfig({
+    stage: Infinity,
+    fn: (memo) => {
+      // add customize option for babel-loader, to avoid collect wrong deps result in MFSU
+      if (memo.babelLoaderCustomize) {
+        api.logger.warn(
+          'Config `babelLoaderCustomize` will be override by dumi, please report issue if you need it.',
+        );
+      }
 
-    memo.babelLoaderCustomize = require.resolve('./babelLoaderCustomize');
+      memo.babelLoaderCustomize = require.resolve('./babelLoaderCustomize');
 
-    return memo;
+      // configure dumi fs cache dir
+      const cacheDirPath =
+        api.userConfig.cacheDirectoryPath || memo.cacheDirectoryPath;
+
+      if (cacheDirPath) _setFSCacheDir(path.join(cacheDirPath, 'dumi'));
+
+      return memo;
+    },
   });
 
   // configure loader to compile markdown
@@ -42,7 +53,9 @@ export default (api: IApi) => {
       resolve: api.config.resolve,
       extraRemarkPlugins: api.config.extraRemarkPlugins,
       extraRehypePlugins: api.config.extraRehypePlugins,
-      routers: api.appData.routes,
+      routes: api.appData.routes,
+      locales: api.config.locales,
+      pkg: api.pkg,
     };
 
     memo.module
@@ -58,22 +71,28 @@ export default (api: IApi) => {
       .end()
       .use('md-meta-loader')
       .loader(loaderPath)
-      .options({
-        ...loaderBaseOpts,
-        mode: 'meta',
-        onResolveDemos(demos) {
-          const assets = demos.reduce<Parameters<typeof addExampleAssets>[0]>(
-            (ret, demo) => {
-              if ('asset' in demo) ret.push(demo.asset);
-              return ret;
-            },
-            [],
-          );
+      .options(
+        (api.isPluginEnable('assets') || api.isPluginEnable('exportStatic')
+          ? {
+              ...loaderBaseOpts,
+              mode: 'meta',
+              onResolveDemos(demos) {
+                const assets = demos.reduce<
+                  Parameters<typeof addExampleAssets>[0]
+                >((ret, demo) => {
+                  if ('asset' in demo) ret.push(demo.asset);
+                  return ret;
+                }, []);
 
-          addExampleAssets(assets);
-        },
-        onResolveAtomMeta: addAtomMeta,
-      } as IMdLoaderOptions)
+                addExampleAssets(assets);
+              },
+              onResolveAtomMeta: addAtomMeta,
+            }
+          : {
+              ...loaderBaseOpts,
+              mode: 'meta',
+            }) as IMdLoaderOptions,
+      )
       .end()
       .end()
       // get page component for each markdown file

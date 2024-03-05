@@ -2,10 +2,7 @@
 title: dumi - 为组件研发而生的静态站点框架
 hero:
   title: dumi
-  description: |
-    为组件研发而生的静态站点框架
-    <br />
-    <small style="opacity: 0.7;">v1 文档请访问 <a href="https://v1.d.umijs.org" style="color: #1677ff;">v1.d.umijs.org</a></small>
+  description: 为组件研发而生的静态站点框架
   actions:
     - text: 立即上手
       link: /guide
@@ -41,5 +38,5 @@ features:
 请访问 [GitHub](https://github.com/umijs/dumi) 或加入讨论群：
 
 <div>
-  <img data-type="dingtalk" src="https://gw.alipayobjects.com/zos/bmw-prod/7362dab4-374e-42c6-9d52-85fd4b5e357b/lbesxxl3_w1004_h1346.jpeg" width="300" />
+  <img data-type="dingtalk" src="https://mdn.alipayobjects.com/huamei_i7qs1c/afts/img/A*T94jRZmW1fgAAAAAAAAAAAAADs-oAQ" width="300" />
 </div>
